@@ -39,3 +39,26 @@ PORT=8000
 go mod download
 go run main.go
 ```
+
+
+### Auto Clean
+
+edit or create file `policy.xml`
+
+```xml
+<LifecycleConfiguration>
+    <Rule>
+        <ID>SystemTemporary</ID>
+        <Prefix>uploads/</Prefix>
+        <Status>Enabled</Status>
+        <Expiration>
+            <Days>5</Days>
+        </Expiration>
+    </Rule>
+</LifecycleConfiguration>
+```
+
+use s3cmd
+```bash
+s3cmd setlifecycle policy.xml s3://Yourbucketname
+```

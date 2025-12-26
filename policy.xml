@@ -1,0 +1,10 @@
+<LifecycleConfiguration>
+    <Rule>
+        <ID>SystemTemporary</ID>
+        <Prefix>uploads/</Prefix>
+        <Status>Enabled</Status>
+        <Expiration>
+            <Days>5</Days>
+        </Expiration>
+    </Rule>
+</LifecycleConfiguration>
