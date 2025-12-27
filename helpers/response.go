@@ -21,3 +21,11 @@ func WriteDATA[T any](w http.ResponseWriter, status int, data T) {
 func WriteError(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, types.APIResponse[any]{Error: msg})
 }
+
+func WriteNotFound(w http.ResponseWriter, r *http.Request) {
+	WriteError(w, http.StatusNotFound, "Not Found")
+}
+
+func WriteMethodNotAllowed(w http.ResponseWriter, r *http.Request) {
+	WriteError(w, http.StatusMethodNotAllowed, "Method Not Allowed")
+}

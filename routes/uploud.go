@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -35,65 +34,88 @@ func NewUploadRoute(app *Upload) *Upload {
 	}
 }
 
-func (u *Upload) buildObjectKey(h *multipart.FileHeader) string {
-	ext := strings.ToLower(filepath.Ext(h.Filename))
+func (u *Upload) buildObjectKey(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
 	if ext == "" {
 		ext = ".bin"
 	}
-	return fmt.Sprintf("%s%s%s", u.KeyPrefix, helpers.RandomHex(16), ext)
+
+	prefix := u.KeyPrefix
+	if prefix != "" && !strings.HasSuffix(prefix, "/") {
+		prefix += "/"
+	}
+
+	return fmt.Sprintf("%s%s%s", prefix, helpers.RandomHex(16), ext)
 }
 
 func (u *Upload) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, u.MaxUpload)
 
-	if err := r.ParseMultipartForm(u.MaxUpload); err != nil {
-		helpers.WriteError(w, http.StatusBadRequest, "Invalid Multipart form")
-		return
-	}
-
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		helpers.WriteError(w, http.StatusBadRequest, "Missing field 'file'")
-		return
-	}
-
-	defer file.Close()
-
-	contentType := header.Header.Get("Content-Type")
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-
-	key := u.buildObjectKey(header)
-	base := filepath.Base(header.Filename)
-
-	input := &s3.PutObjectInput{
-		Bucket:      aws.String(u.Bucket),
-		Key:         aws.String(key),
-		Body:        file,
-		ContentType: aws.String(contentType),
-		Metadata: map[string]string{
-			"original-filename": strings.TrimSpace(base),
-			"uploaded-at":       time.Now().UTC().Format(time.RFC3339),
-		},
-	}
-
 	ctx := r.Context()
 
-	_, err = u.Uploader.Upload(ctx, input)
+	reader, err := r.MultipartReader()
 	if err != nil {
-		helpers.WriteError(w, http.StatusInternalServerError, "Upload to s3 failed")
+		helpers.WriteError(w, http.StatusBadRequest, "Invalid multipart form")
 		return
 	}
 
-	resp := map[string]any{
-		"key":          key,
-		"content_type": contentType,
-		"size":         header.Size,
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			helpers.WriteError(w, http.StatusInternalServerError, "Failed Read")
+			return
+		}
+
+		if part.FormName() != "file" {
+			part.Close()
+			continue
+		}
+
+		filename := strings.TrimSpace(part.FileName())
+		if filename == "" {
+			helpers.WriteError(w, http.StatusBadRequest, "Field 'file' not exits")
+			return
+		}
+
+		contentType := part.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
+		key := u.buildObjectKey(filename)
+		base := filepath.Base(filename)
+
+		input := &s3.PutObjectInput{
+			Bucket:      aws.String(u.Bucket),
+			Key:         aws.String(key),
+			Body:        part,
+			ContentType: aws.String(contentType),
+			Metadata: map[string]string{
+				"original-filename": strings.TrimSpace(base),
+				"uploaded-at":       time.Now().UTC().Format(time.RFC3339),
+			},
+		}
+
+		_, err = u.Uploader.Upload(ctx, input)
+		if err != nil {
+			helpers.WriteError(w, http.StatusInternalServerError, "Upload to s3 failed")
+			return
+		}
+
+		resp := map[string]any{
+			"key":          key,
+			"content_type": contentType,
+		}
+
+		helpers.WriteDATA(w, http.StatusOK, resp)
+		return
 	}
 
-	helpers.WriteDATA(w, http.StatusOK, resp)
-
+	helpers.WriteError(w, http.StatusBadRequest, "Missing field 'file'")
 }
 
 func (u *Upload) HandleGetFile(w http.ResponseWriter, r *http.Request) {

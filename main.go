@@ -48,13 +48,16 @@ func main() {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.Timeout(30 * time.Second))
+
+	r.NotFound(helpers.WriteNotFound)
+	r.MethodNotAllowed(helpers.WriteMethodNotAllowed)
 
 	up := routes.NewUploadRoute(&routes.Upload{
 		Bucket:    *aws.String(bucket),
 		Uploader:  uploader,
 		S3Client:  s3Client,
-		MaxUpload: 50 << 20,
+		MaxUpload: 32 << 20,
 		KeyPrefix: "uploads/",
 	})
 
